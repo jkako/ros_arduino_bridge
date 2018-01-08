@@ -86,6 +86,61 @@
     setMotorSpeed(LEFT, leftSpeed);
     setMotorSpeed(RIGHT, rightSpeed);
   }
+
+#elif defined(MONSTER_MOTO_SHIELD)
+
+  void initMotorController() {
+    MotorInit(LEFT);
+    MotorInit(RIGHT);
+  }
+  
+  void setMotorSpeed(int i, int spd) {
+    unsigned char reverse = 0;
+    if (spd == 0)
+    {
+      MotorEn(i, false);
+      SetMotorPWM(i,0);
+      
+    }
+    else 
+
+    {
+    //Serial.print(".");
+    MotorEn(i, true);
+    if (spd < 0)
+    {
+      spd = -spd;
+      reverse = 1;
+    } else if (spd > PWMCNT)
+    {
+      spd = PWMCNT;
+    }
+    if (i == LEFT) { 
+      if      (reverse == 0) { MotorFWD(LEFT,true); }
+      else if (reverse == 1) { MotorFWD(LEFT,false); }
+
+    }
+    else /*if (i == RIGHT) //no need for condition*/ {
+      if      (reverse == 0) { MotorFWD(RIGHT,true); }
+      else if (reverse == 1) { MotorFWD(RIGHT,false); }
+    }
+
+   #ifdef DBG_ON
+   #if (DBG_ON < 2)
+  SetMotorPWM(i,(int)spd);
+   #endif
+   #else
+  SetMotorPWM(i,(int)spd);
+   #endif
+  }
+  
+  }
+  
+  void setMotorSpeeds(int leftSpeed, int rightSpeed) {
+    setMotorSpeed(LEFT,(int)leftSpeed);
+    setMotorSpeed(RIGHT,(int)rightSpeed);
+  }
+  
 #else
   #error A motor driver must be selected!
 #endif

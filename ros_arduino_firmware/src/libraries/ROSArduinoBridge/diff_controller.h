@@ -124,7 +124,12 @@ void updatePID() {
   doPID(&rightPID);
   doPID(&leftPID);
 
+#ifdef ACC_CONT
+  setMotorSpeeds(rightPID.output+feedForward[0], leftPID.output+feedForward[1]);
+#else
   /* Set the motor speeds accordingly */
-  setMotorSpeeds(leftPID.output, rightPID.output);
+  //setMotorSpeeds(leftPID.output, rightPID.output);
+  setMotorSpeeds(rightPID.output, leftPID.output);
+#endif
 }
 

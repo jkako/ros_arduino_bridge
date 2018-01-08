@@ -68,6 +68,23 @@
       return;
     }
   }
+#elif defined(ARDUINO_MEGA_ENC_COUNTER)
+  /* Wrap the encoder reading function */
+  long readEncoder(int i) {
+    if (i == LEFT) return encoderPos0;
+    else return encoderPos1;
+  }
+
+  /* Wrap the encoder reset function */
+  void resetEncoder(int i) {
+    if (i == LEFT){
+      encoderPos0=0L;
+      return;
+    } else { 
+      encoderPos1=0L;
+      return;
+    }
+  }
 #else
   #error A encoder driver must be selected!
 #endif

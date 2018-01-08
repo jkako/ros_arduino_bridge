@@ -9,6 +9,8 @@
   #define LEFT_MOTOR_FORWARD   10
   #define RIGHT_MOTOR_ENABLE 12
   #define LEFT_MOTOR_ENABLE 13
+#elif defined(MONSTER_MOTO_SHIELD)
+ // #include "saugbert.h"
 #endif
 
 void initMotorController();

@@ -45,35 +45,50 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  *********************************************************************/
 
-//#define USE_BASE      // Enable the base controller code
-#undef USE_BASE     // Disable the base controller code
+/*
+ * TODO: To clean up Left/Right mess rewrite everything to match 0;1
+ */
+
+#include "testmode.h"
+
+#define DBG_ON 1
+//#undef DBG_0N
+
+#define USE_BASE      // Enable the base controller code
+//#undef USE_BASE     // Disable the base controller code
+
+#define ACC_CONT //Use Accelleration based Control
+//#undef ACC_CONT
+
+#define FLEX_TIME //not used so far basically change from fixed PID interval to flexible based on assumed encoder time difference ==> Todo: accurate timekeeping
+//undef FLEX_TIME
 
 /* Define the motor controller and encoder library you are using */
 #ifdef USE_BASE
    /* The Pololu VNH5019 dual motor driver shield */
-   #define POLOLU_VNH5019
-
+   //#define POLOLU_VNH5019
+    #define MONSTER_MOTO_SHIELD
    /* The Pololu MC33926 dual motor driver shield */
    //#define POLOLU_MC33926
 
    /* The RoboGaia encoder shield */
-   #define ROBOGAIA
+   //#define ROBOGAIA
    
    /* Encoders directly attached to Arduino board */
    //#define ARDUINO_ENC_COUNTER
-
+   #define ARDUINO_MEGA_ENC_COUNTER
    /* L298 Motor driver*/
    //#define L298_MOTOR_DRIVER
 #endif
 
-#define USE_SERVOS  // Enable use of PWM servos as defined in servos.h
-//#undef USE_SERVOS     // Disable use of PWM servos
+//#define USE_SERVOS  // Enable use of PWM servos as defined in servos.h
+#undef USE_SERVOS     // Disable use of PWM servos
 
 /* Serial port baud rate */
 #define BAUDRATE     57600
 
 /* Maximum PWM signal */
-#define MAX_PWM        255
+#define MAX_PWM        1200
 
 #if defined(ARDUINO) && ARDUINO >= 100
 #include "Arduino.h"
@@ -96,25 +111,33 @@
 #ifdef USE_BASE
   /* Motor driver function definitions */
   #include "motor_driver.h"
+  
+  #ifdef MONSTER_MOTO_SHIELD
+    #include "saugbert.h"
+  #endif
+  
+    /* Run the PID loop at 30 times per second */
+  #define PID_RATE           100     // Hz
+    
+  #ifdef ACC_CONT
+    #include "accel_control.h"
+  #endif
 
-  /* Encoder driver function definitions */
+  
+    /* Encoder driver function definitions */
   #include "encoder_driver.h"
 
-  /* PID parameters and functions */
-  #include "diff_controller.h"
-
-  /* Run the PID loop at 30 times per second */
-  #define PID_RATE           30     // Hz
-
-  /* Convert the rate into an interval */
+    /* PID parameters and functions */
+  #include "diff_controller.h" //ACC_CONT may take over part or all of the regulator work TBD
+    /* Convert the rate into an interval */
   const int PID_INTERVAL = 1000 / PID_RATE;
-  
-  /* Track the next time we make a PID calculation */
+    
+    /* Track the next time we make a PID calculation */
   unsigned long nextPID = PID_INTERVAL;
-
-  /* Stop the robot if it hasn't received a movement command
-   in this number of milliseconds */
-  #define AUTO_STOP_INTERVAL 2000
+  
+    /* Stop the robot if it hasn't received a movement command
+     in this number of milliseconds */
+  #define AUTO_STOP_INTERVAL 5000
   long lastMotorCommand = AUTO_STOP_INTERVAL;
 #endif
 
@@ -140,7 +163,7 @@ long arg2;
 
 /* Clear the current command parameters */
 void resetCommand() {
-  cmd = NULL;
+  cmd = 0; //Removed NULL (gives Compiler warning, think no side effects by 0 (which is NULL by ASCII definition
   memset(argv1, 0, sizeof(argv1));
   memset(argv2, 0, sizeof(argv2));
   arg1 = 0;
@@ -182,7 +205,7 @@ int runCommand() {
     else if (arg2 == 1) pinMode(arg1, OUTPUT);
     Serial.println("OK");
     break;
-  case PING:
+  case PING_COM:
     Serial.println(Ping(arg1));
     break;
 #ifdef USE_SERVOS
@@ -210,15 +233,39 @@ int runCommand() {
     /* Reset the auto stop timer */
     lastMotorCommand = millis();
     if (arg1 == 0 && arg2 == 0) {
+      #ifdef ACC_CONT
+        newSetpoint(0,0); //TODO do a final cleanup of Left/Right vs. 0/1 this is a Mess!
+      #endif
       setMotorSpeeds(0, 0);
       resetPID();
       moving = 0;
     }
     else moving = 1;
+#ifdef ACC_CONT
+    newSetpoint(arg1,arg2); //TODO do a final cleanup of Left/Right vs. 0/1 this is a Mess!
+#else
     leftPID.TargetTicksPerFrame = arg1;
     rightPID.TargetTicksPerFrame = arg2;
+#endif
     Serial.println("OK"); 
     break;
+  case MOTOR_POWER:
+    /* Reset the auto stop timer */
+    lastMotorCommand = millis();
+    if (arg1 == 0 && arg2 == 0) {
+      setMotorSpeeds(0, 0);
+      resetPID();
+      moving = 0;
+    }
+    else moving = 1;
+    setMotorSpeed(LEFT,arg1);
+    setMotorSpeed(RIGHT,arg2);
+    Serial.println("OK"); 
+  break;
+  case TEST_MODE:
+    testmode(1);
+    
+  break;
   case UPDATE_PID:
     while ((str = strtok_r(p, ":", &p)) != '\0') {
        pid_args[i] = atoi(str);
@@ -263,9 +310,15 @@ void setup() {
     
     // enable PCINT1 and PCINT2 interrupt in the general interrupt mask
     PCICR |= (1 << PCIE1) | (1 << PCIE2);
+  #elif defined(ARDUINO_MEGA_ENC_COUNTER)
+  
+  EncoderInit();
+  
   #endif
+  
   initMotorController();
   resetPID();
+  Init_Acc();
 #endif
 
 /* Attach servos if used */
@@ -284,7 +337,11 @@ void setup() {
    and run any valid commands. Run a PID calculation at the target
    interval and check for auto-stop conditions.
 */
+
 void loop() {
+  #ifdef ACC_CONT
+  UpdateSetpoints();
+  #endif
   while (Serial.available() > 0) {
     
     // Read the next character
@@ -292,8 +349,8 @@ void loop() {
 
     // Terminate a command with a CR
     if (chr == 13) {
-      if (arg == 1) argv1[index] = NULL;
-      else if (arg == 2) argv2[index] = NULL;
+      if (arg == 1) argv1[index] = 0; //removed all NULL and exchange by 0 which is basically (according to ASCII Table) the same but not empty by definition and gives no compiler Warning
+      else if (arg == 2) argv2[index] = 0;
       runCommand();
       resetCommand();
     }
@@ -302,7 +359,7 @@ void loop() {
       // Step through the arguments
       if (arg == 0) arg = 1;
       else if (arg == 1)  {
-        argv1[index] = NULL;
+        argv1[index] = 0;
         arg = 2;
         index = 0;
       }
@@ -333,9 +390,13 @@ void loop() {
   }
   
   // Check to see if we have exceeded the auto-stop interval
-  if ((millis() - lastMotorCommand) > AUTO_STOP_INTERVAL) {;
-    setMotorSpeeds(0, 0);
-    moving = 0;
+  if(moving == 1){
+    if ((millis() - lastMotorCommand) > AUTO_STOP_INTERVAL) 
+    {
+      setMotorSpeeds(0, 0);
+      newSetpoint(0,0);
+      moving = 0;
+    }
   }
 #endif
 
